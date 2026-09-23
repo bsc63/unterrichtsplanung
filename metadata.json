@@ -1,0 +1,8 @@
+{
+  "name": "Unterrichtsplaner Pro",
+  "description": "Moderne, responsive Web-App zur Unterrichtsplanung und Dokumentation für Desktop, iPad und Smartphone mit nativer Datei- und Cloud-Synchronisation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,205 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    -webkit-overflow-scrolling: touch;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Custom scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Contenteditable list styling - Hierarchical */
+[contenteditable] ul,
+[contenteditable="true"] ul,
+[contenteditable] ol,
+[contenteditable="true"] ol {
+  padding-left: 1.5rem;
+  margin: 0.25rem 0;
+}
+
+/* Unordered list levels */
+[contenteditable] ul,
+[contenteditable="true"] ul {
+  list-style-type: disc;
+}
+[contenteditable] ul ul,
+[contenteditable="true"] ul ul,
+[contenteditable] ol ul,
+[contenteditable="true"] ol ul {
+  list-style-type: circle;
+  padding-left: 1.25rem;
+  margin: 0.15rem 0;
+}
+[contenteditable] ul ul ul,
+[contenteditable="true"] ul ul ul,
+[contenteditable] ol ul ul,
+[contenteditable="true"] ol ul ul,
+[contenteditable] ul ol ul,
+[contenteditable="true"] ul ol ul {
+  list-style-type: square;
+  padding-left: 1.25rem;
+  margin: 0.15rem 0;
+}
+
+/* Ordered list levels */
+[contenteditable] ol,
+[contenteditable="true"] ol {
+  list-style-type: decimal;
+}
+[contenteditable] ol ol,
+[contenteditable="true"] ol ol,
+[contenteditable] ul ol,
+[contenteditable="true"] ul ol {
+  list-style-type: lower-alpha;
+  padding-left: 1.25rem;
+  margin: 0.15rem 0;
+}
+[contenteditable] ol ol ol,
+[contenteditable="true"] ol ol ol,
+[contenteditable] ul ol ol,
+[contenteditable="true"] ul ol ol,
+[contenteditable] ol ul ol,
+[contenteditable="true"] ol ul ol {
+  list-style-type: lower-roman;
+  padding-left: 1.25rem;
+  margin: 0.15rem 0;
+}
+
+[contenteditable] li,
+[contenteditable="true"] li {
+  margin: 0.15rem 0;
+}
+
+/* 3 Font sizes: Klein (1), Normal (3), Groß (5) */
+[contenteditable] font[size="1"],
+[contenteditable] font[size="2"],
+[contenteditable="true"] font[size="1"],
+[contenteditable="true"] font[size="2"] {
+  font-size: 0.75rem; /* klein: ca. 12px */
+  line-height: 1.35;
+}
+[contenteditable] font[size="3"],
+[contenteditable="true"] font[size="3"] {
+  font-size: 0.875rem; /* normal: ca. 14px */
+  line-height: 1.5;
+}
+[contenteditable] font[size="4"],
+[contenteditable] font[size="5"],
+[contenteditable] font[size="6"],
+[contenteditable] font[size="7"],
+[contenteditable="true"] font[size="4"],
+[contenteditable="true"] font[size="5"],
+[contenteditable="true"] font[size="6"],
+[contenteditable="true"] font[size="7"] {
+  font-size: 1.125rem; /* groß: ca. 18px */
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+[contenteditable] a,
+[contenteditable="true"] a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* Animation helpers */
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.15s ease-out forwards;
+}
+
+/* PRINT STYLES */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm 15mm 10mm;
+  }
+
+  body, html {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 9.5pt !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Reset all flex/overflow constraints that could clip pages */
+  #root, .min-h-screen, main, .overflow-y-auto, .overflow-x-auto, .flex-1 {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    display: block !important;
+  }
+
+  /* Hide UI elements */
+  header,
+  nav,
+  .print\:hidden,
+  button,
+  .fixed,
+  input[type="file"] {
+    display: none !important;
+  }
+
+  /* Show print container */
+  .print-header {
+    display: block !important;
+    margin-bottom: 12px;
+    border-bottom: 2px solid #0f3460;
+    padding-bottom: 6px;
+  }
+
+  .print-notes {
+    display: block !important;
+    margin-bottom: 14px;
+    padding: 8px 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #4338ca;
+    border-radius: 4px;
+    page-break-inside: avoid;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 9pt !important;
+  }
+
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 6px 8px !important;
+    color: #000000 !important;
+    vertical-align: top !important;
+  }
+
+  th {
+    background-color: #f1f5f9 !important;
+    font-weight: 700 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+}
