@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   FolderSync, 
   Printer, 
@@ -11,7 +11,8 @@ import {
   StickyNote,
   Layers,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { PlannerData } from '../types';
 
@@ -24,8 +25,10 @@ interface HeaderProps {
   setShowNotes: (show: boolean) => void;
   isDirty: boolean;
   syncConnected: boolean;
+  hasSyncConfig?: boolean;
   folderName?: string;
   onOpenSync: () => void;
+  onReloadSync?: () => void;
   onOpenAutoDate: () => void;
   onOpenCopyCol: () => void;
   onOpenTabManager: () => void;
@@ -43,8 +46,10 @@ export const Header: React.FC<HeaderProps> = ({
   setShowNotes,
   isDirty,
   syncConnected,
+  hasSyncConfig = false,
   folderName = '',
   onOpenSync,
+  onReloadSync,
   onOpenAutoDate,
   onOpenCopyCol,
   onOpenTabManager,
@@ -57,14 +62,34 @@ export const Header: React.FC<HeaderProps> = ({
   const currentClassName = data.tabs[activeTab] || 'Klasse';
   const hasNotes = Boolean(data.rows[activeTab]?.text?.trim());
 
+  // Dynamische Erkennung des systemspezifischen Icons
+  const appIconSrc = useMemo(() => {
+    if (typeof window === 'undefined') return '/icon-192.png';
+    const ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/.test(ua)) {
+      return '/apple-touch-icon.png';
+    }
+    if (/Android/.test(ua)) {
+      return '/icon-192.png';
+    }
+    return '/icon-192.png';
+  }, []);
+
   return (
     <header className="bg-white border-b border-slate-200 shadow-sm print:hidden">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5 sm:py-3">
         {/* Top Row: App Title + Quick Stats + Primary Actions */}
         <div className="flex items-center justify-between gap-2 sm:gap-4">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-white border border-slate-200 overflow-hidden shadow-xs flex items-center justify-center flex-shrink-0">
-              <img src="/apple-touch-icon.png" alt="Icon" className="w-full h-full object-cover" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-xs flex items-center justify-center flex-shrink-0 bg-transparent">
+              <img
+                src={appIconSrc}
+                alt="Unterrichtsplaner"
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = '/icon-192.png';
+                }}
+              />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
@@ -133,29 +158,68 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </button>
 
+            {/* Direct SYNC neu laden Button when Sync is configured */}
+            {hasSyncConfig && onReloadSync && (
+              <button
+                type="button"
+                onClick={onReloadSync}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-all shadow-xs hover:border-indigo-300"
+                title="SYNC neu laden: Aktuelle Datei aus dem Sync-Ordner neu laden (z. B. nach FreeFileSync-Abgleich)"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-indigo-600" />
+                <span className="hidden sm:inline">SYNC neu laden</span>
+              </button>
+            )}
+
             {/* Sync Button (Works on iPad & Desktop!) */}
             <button
               type="button"
               onClick={onOpenSync}
               className={`relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-all shadow-xs ${
                 syncConnected
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  ? isDirty
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  : hasSyncConfig
+                  ? 'bg-slate-800 hover:bg-slate-900 text-white'
                   : isDirty
                   ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
                   : 'bg-slate-800 hover:bg-slate-900 text-white'
               }`}
-              title="Synchronisation & Backup öffnen (iPad, Desktop & Cloud)"
+              title={
+                syncConnected
+                  ? isDirty
+                    ? 'Schreibt Änderungen in die JSON-Datei auf der Festplatte...'
+                    : 'Verbunden: Alle Änderungen sind direkt in deiner JSON-Datei auf der Festplatte gespeichert.'
+                  : hasSyncConfig
+                  ? 'Sync-Ordner konfiguriert, aber aktuell nicht direkt verbunden. Klicke hier oder auf „SYNC neu laden“.'
+                  : 'Synchronisation & Backup öffnen (iPad, Desktop & Cloud)'
+              }
             >
-              <FolderSync className="w-3.5 h-3.5" />
+              {syncConnected ? (
+                isDirty ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-200" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
+                )
+              ) : (
+                <FolderSync className="w-3.5 h-3.5" />
+              )}
               <span className="font-semibold">
                 {syncConnected
-                  ? folderName
+                  ? isDirty
+                    ? 'Speichert...'
+                    : folderName
                     ? `Sync: ${folderName.length > 14 ? folderName.slice(0, 12) + '…' : folderName}`
                     : 'Sync aktiv'
+                  : hasSyncConfig
+                  ? folderName
+                    ? `Sync bereit: ${folderName.length > 10 ? folderName.slice(0, 8) + '…' : folderName}`
+                    : 'Sync bereit'
                   : 'Sync'}
               </span>
               {isDirty && !syncConnected && (
-                <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
               )}
             </button>
 

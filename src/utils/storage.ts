@@ -32,6 +32,10 @@ export const isIosOrIpad = typeof navigator !== 'undefined' && (
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
 );
 
+export const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+
+export const isMobileDevice = isIosOrIpad || isAndroid;
+
 export function createDefaultPlannerData(): PlannerData {
   return {
     tabs: ['Klasse 1', 'Klasse 2', 'Klasse 3'],
@@ -242,6 +246,39 @@ export async function connectFolderAndPickFile(currentData?: PlannerData): Promi
   };
 }
 
+export const SYNC_LAST_LOADED_AT_KEY = 'unterrichtsplanung_last_sync_timestamp';
+
+/**
+ * Retrieves the stored FileSystemDirectoryHandle from IndexedDB without checking permission.
+ */
+export async function getStoredDirectoryHandle(): Promise<FileSystemDirectoryHandle | null> {
+  try {
+    return await idbGetHandle('syncDir');
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Requests or queries permission for a FileSystemDirectoryHandle.
+ * Note: calling requestPermission requires a user gesture (e.g. clicking OK in a modal).
+ */
+export async function verifyFolderPermission(
+  handle: FileSystemDirectoryHandle,
+  readWrite: boolean = true
+): Promise<boolean> {
+  try {
+    const opts = { mode: readWrite ? 'readwrite' : 'read' };
+    if ((await (handle as any).queryPermission(opts)) === 'granted') {
+      return true;
+    }
+    const req = await (handle as any).requestPermission(opts);
+    return req === 'granted';
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * Attempts to retrieve previously saved directory handle and reload the active JSON file.
  */
@@ -295,21 +332,24 @@ export async function saveToFolderHandle(
 export async function readFromFolderHandle(
   handle: FileSystemDirectoryHandle,
   fileName?: string
-): Promise<{ data: PlannerData; fileName: string } | null> {
+): Promise<{ data: PlannerData; fileName: string; lastModified?: number } | null> {
   try {
     const targetName = fileName || localStorage.getItem(SYNC_ACTIVE_FILENAME_KEY) || SYNC_FILENAME;
+    
+    // First try the targeted filename directly
     try {
       const fileHandle = await handle.getFileHandle(targetName, { create: false });
       const file = await fileHandle.getFile();
       const text = await file.text();
       const parsed = JSON.parse(text);
       if (parsed && Array.isArray(parsed.tabs) && parsed.rows) {
-        return { data: parsed, fileName: targetName };
+        return { data: parsed, fileName: targetName, lastModified: file.lastModified };
       }
     } catch (e) {
       // primary file not found, try to search for any other .json in folder
     }
 
+    // Fallback: search all JSON files in directory (sorted newest first)
     const files = await listJsonFilesInFolder(handle);
     for (const f of files) {
       try {
@@ -318,7 +358,7 @@ export async function readFromFolderHandle(
         const parsed = JSON.parse(text);
         if (parsed && Array.isArray(parsed.tabs) && parsed.rows) {
           localStorage.setItem(SYNC_ACTIVE_FILENAME_KEY, f.name);
-          return { data: parsed, fileName: f.name };
+          return { data: parsed, fileName: f.name, lastModified: file.lastModified };
         }
       } catch (e) {
         // continue

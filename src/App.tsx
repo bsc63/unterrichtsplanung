@@ -5,6 +5,8 @@ import {
   saveSnapshot, 
   connectFolderAndPickFile, 
   getSavedFolderHandle, 
+  getStoredDirectoryHandle,
+  verifyFolderPermission,
   saveToFolderHandle, 
   readFromFolderHandle,
   disconnectFolderHandle,
@@ -28,6 +30,7 @@ import { TabManagerModal } from './components/TabManagerModal';
 import { AutoDateModal } from './components/AutoDateModal';
 import { CopyColumnModal } from './components/CopyColumnModal';
 import { QrSyncModal } from './components/QrSyncModal';
+import { SyncReloadPromptModal } from './components/SyncReloadPromptModal';
 import { openClassPdfInNewTab } from './utils/pdfExport';
 import { CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 
@@ -61,11 +64,22 @@ export default function App() {
   const [autoDateOpen, setAutoDateOpen] = useState(false);
   const [copyColOpen, setCopyColOpen] = useState(false);
   const [qrSyncOpen, setQrSyncOpen] = useState(false);
+  const [syncReloadPromptOpen, setSyncReloadPromptOpen] = useState(false);
+  const [isReloadingSync, setIsReloadingSync] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const syncTimerRef = useRef<any>(null);
   const snapshotTimerRef = useRef<any>(null);
+  const latestDataRef = useRef<PlannerData>(data);
+  const syncDirHandleRef = useRef<FileSystemDirectoryHandle | null>(syncDirHandle);
+  const activeSyncFileNameRef = useRef<string>(activeSyncFileName);
+  const pendingSaveRef = useRef<boolean>(false);
+
+  // Keep refs in sync with state
+  latestDataRef.current = data;
+  syncDirHandleRef.current = syncDirHandle;
+  activeSyncFileNameRef.current = activeSyncFileName;
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -74,50 +88,127 @@ export default function App() {
     }, 3500);
   };
 
-  // Try restoring folder handle on mount (Desktop Chrome/Edge) or saved folder binding
-  useEffect(() => {
-    if (isFsaSupported) {
-      getSavedFolderHandle().then(async (saved) => {
-        if (saved && saved.handle) {
-          setSyncDirHandle(saved.handle);
-          setSyncConnected(true);
-          const fName = saved.folderName || saved.handle.name || 'Sync-Ordner';
-          setSyncFolderName(fName);
-          setActiveSyncFileName(saved.activeFileName);
+  const hasSyncConfig = Boolean(
+    syncFolderName ||
+    syncDirHandle ||
+    (typeof window !== 'undefined' && (localStorage.getItem(SYNC_FOLDER_NAME_KEY) || localStorage.getItem(SYNC_ACTIVE_FILENAME_KEY)))
+  );
 
-          // Read the newest / active file from this remembered folder
-          const result = await readFromFolderHandle(saved.handle, saved.activeFileName);
+  // Check saved folder / sync configuration on startup and prompt user: "SYNC neu laden?"
+  useEffect(() => {
+    const checkSyncOnMount = async () => {
+      const savedFolder = localStorage.getItem(SYNC_FOLDER_NAME_KEY);
+      const savedFile = localStorage.getItem(SYNC_ACTIVE_FILENAME_KEY) || SYNC_FILENAME;
+
+      let storedHandle: FileSystemDirectoryHandle | null = null;
+      if (isFsaSupported) {
+        storedHandle = await getStoredDirectoryHandle();
+        if (storedHandle) {
+          setSyncDirHandle(storedHandle);
+          const fName = storedHandle.name || savedFolder || 'Sync-Ordner';
+          setSyncFolderName(fName);
+          setActiveSyncFileName(savedFile);
+        }
+      }
+
+      if (savedFolder && !storedHandle) {
+        setSyncFolderName(savedFolder);
+        setActiveSyncFileName(savedFile);
+      }
+
+      // If a sync configuration was set up previously, display the prompt
+      // with preselected "OK (SYNC neu laden)" and selectable "Nein"
+      if (storedHandle || savedFolder) {
+        setSyncReloadPromptOpen(true);
+      }
+    };
+
+    checkSyncOnMount();
+  }, []);
+
+  // Handler when user confirms: "OK (SYNC neu laden)"
+  const handleConfirmSyncReload = async () => {
+    setIsReloadingSync(true);
+    try {
+      let dirHandle = syncDirHandle;
+      if (!dirHandle && isFsaSupported) {
+        dirHandle = await getStoredDirectoryHandle();
+      }
+
+      if (dirHandle) {
+        // User clicked OK in prompt => valid user gesture to grant readwrite access
+        const granted = await verifyFolderPermission(dirHandle, true);
+        if (granted) {
+          setSyncDirHandle(dirHandle);
+          const result = await readFromFolderHandle(dirHandle, activeSyncFileName);
           if (result && result.data) {
             setData(result.data);
             savePlannerData(result.data);
-            setActiveSyncFileName(result.fileName);
-            showToast(`🔄 Aus „${fName}/${result.fileName}“ synchronisiert`);
-          }
-        } else {
-          // If no active FSA handle but saved folder in localStorage
-          const savedFolder = localStorage.getItem(SYNC_FOLDER_NAME_KEY);
-          const savedFile = localStorage.getItem(SYNC_ACTIVE_FILENAME_KEY);
-          if (savedFolder) {
+            saveSnapshot(result.data, `Sync geladen: ${result.fileName}`);
             setSyncConnected(true);
-            setSyncFolderName(savedFolder);
-            if (savedFile) setActiveSyncFileName(savedFile);
+            setActiveSyncFileName(result.fileName);
+            const fName = dirHandle.name || syncFolderName || 'Sync-Ordner';
+            setSyncFolderName(fName);
+            localStorage.setItem(SYNC_FOLDER_NAME_KEY, fName);
+            localStorage.setItem(SYNC_ACTIVE_FILENAME_KEY, result.fileName);
+            setIsDirty(false);
+            setSyncReloadPromptOpen(false);
+            showToast(`🔄 Daten aus „${fName}/${result.fileName}“ erfolgreich neu geladen!`);
+            return;
           }
         }
-      });
-    } else {
-      const savedFolder = localStorage.getItem(SYNC_FOLDER_NAME_KEY);
-      const savedFile = localStorage.getItem(SYNC_ACTIVE_FILENAME_KEY);
-      if (savedFolder) {
-        setSyncConnected(true);
-        setSyncFolderName(savedFolder);
-        if (savedFile) setActiveSyncFileName(savedFile);
       }
+
+      // Fallback for Android, mobile, or without direct FSA folder handle:
+      // Open file selector so the user can pick the updated .json in one tap
+      setSyncReloadPromptOpen(false);
+      showToast('📂 Bitte wähle die aktuelle .json-Datei aus deinem Sync-Ordner aus');
+      setTimeout(() => {
+        fileInputRef.current?.click();
+      }, 120);
+    } catch (e: any) {
+      console.warn('Error during sync reload', e);
+      setSyncReloadPromptOpen(false);
+      showToast('⚠️ Ordner-Zugriff fehlgeschlagen. Bitte Datei manuell wählen.');
+      setTimeout(() => {
+        fileInputRef.current?.click();
+      }, 120);
+    } finally {
+      setIsReloadingSync(false);
+    }
+  };
+
+  // Handler when user selects: "Nein (Lokalen Stand behalten)"
+  const handleCancelSyncReload = () => {
+    setSyncReloadPromptOpen(false);
+    // Explicitly keep syncConnected as false so the user clearly sees they are on local state
+    setSyncConnected(false);
+    showToast('Lokaler Stand beibehalten. Mit „SYNC neu laden“ kannst du jederzeit aktualisieren.');
+  };
+
+  // Explicit flush function to guarantee writing to disk immediately
+  const flushSaveToDisk = useCallback(async () => {
+    if (!syncDirHandleRef.current || !pendingSaveRef.current) return;
+    clearTimeout(syncTimerRef.current);
+    try {
+      const ok = await saveToFolderHandle(
+        syncDirHandleRef.current,
+        latestDataRef.current,
+        activeSyncFileNameRef.current
+      );
+      if (ok) {
+        pendingSaveRef.current = false;
+        setIsDirty(false);
+      }
+    } catch (e) {
+      console.warn('Flush save to folder failed', e);
     }
   }, []);
 
   // Save changes to localStorage & trigger folder sync
   const updateData = useCallback((newData: PlannerData, reason?: string) => {
     setData(newData);
+    latestDataRef.current = newData;
     savePlannerData(newData);
     setIsDirty(true);
 
@@ -127,17 +218,42 @@ export default function App() {
       saveSnapshot(newData, reason || 'Automatische Sicherung');
     }, 2000);
 
-    // If folder handle connected, save automatically to the active JSON in that folder
-    if (syncDirHandle) {
+    // If folder handle connected, save automatically to the active JSON in that folder (400ms debounce)
+    if (syncDirHandleRef.current) {
+      pendingSaveRef.current = true;
       clearTimeout(syncTimerRef.current);
       syncTimerRef.current = setTimeout(async () => {
-        const ok = await saveToFolderHandle(syncDirHandle, newData, activeSyncFileName);
-        if (ok) {
-          setIsDirty(false);
-        }
-      }, 800);
+        await flushSaveToDisk();
+      }, 400);
     }
-  }, [syncDirHandle, activeSyncFileName]);
+  }, [flushSaveToDisk]);
+
+  // Flush pending disk saves when switching tabs, minimizing window or closing page
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushSaveToDisk();
+      }
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (pendingSaveRef.current) {
+        flushSaveToDisk();
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handleVisibilityChange);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [flushSaveToDisk]);
 
   // Tab Operations
   const handleSelectTab = (idx: number) => {
@@ -543,7 +659,10 @@ export default function App() {
           saveSnapshot(parsed, `Import: ${file.name}`);
           setIsDirty(false);
           setActiveTab(0);
-          showToast(`📥 Backup aus „${file.name}“ erfolgreich importiert`);
+          setSyncConnected(true);
+          setActiveSyncFileName(file.name);
+          localStorage.setItem(SYNC_ACTIVE_FILENAME_KEY, file.name);
+          showToast(`📥 Backup aus „${file.name}“ erfolgreich geladen`);
         } else {
           alert('Ungültiges Dateiformat. Bitte wähle eine gültige Unterrichtsplaner-JSON-Datei.');
         }
@@ -596,12 +715,14 @@ export default function App() {
         activeTab={activeTab}
         isDirty={isDirty}
         syncConnected={syncConnected}
+        hasSyncConfig={hasSyncConfig}
         folderName={syncFolderName}
         viewMode={viewMode}
         setViewMode={setViewMode}
         showNotes={showNotes}
         setShowNotes={setShowNotes}
         onOpenSync={() => setSyncModalOpen(true)}
+        onReloadSync={handleConfirmSyncReload}
         onOpenTabManager={() => setTabManagerOpen(true)}
         onOpenAutoDate={() => setAutoDateOpen(true)}
         onOpenCopyCol={() => setCopyColOpen(true)}
@@ -688,6 +809,7 @@ export default function App() {
         activeFileName={activeSyncFileName}
         folderName={syncFolderName}
         onConnectFolder={handleConnectFolder}
+        onReloadFromFolder={handleConfirmSyncReload}
         onDisconnectFolder={handleDisconnectFolder}
         onImportClick={() => fileInputRef.current?.click()}
         onOpenQrSync={() => setQrSyncOpen(true)}
@@ -733,6 +855,17 @@ export default function App() {
           updateData(newData, 'Via QR-Code importiert');
           showToast('📥 Daten erfolgreich vom anderen Gerät empfangen!');
         }}
+      />
+
+      {/* SYNC RELOAD POPUP ON APP LAUNCH (Vorgewähltes OK, wählbares NEIN) */}
+      <SyncReloadPromptModal
+        isOpen={syncReloadPromptOpen}
+        onConfirm={handleConfirmSyncReload}
+        onCancel={handleCancelSyncReload}
+        folderName={syncFolderName}
+        fileName={activeSyncFileName}
+        isFsa={isFsaSupported && Boolean(syncDirHandle || (typeof window !== 'undefined' && localStorage.getItem(SYNC_FOLDER_NAME_KEY)))}
+        isReloading={isReloadingSync}
       />
     </div>
   );
