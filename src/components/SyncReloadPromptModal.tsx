@@ -128,7 +128,7 @@ export const SyncReloadPromptModal: React.FC<SyncReloadPromptModalProps> = ({
               ) : (
                 <>
                   <Smartphone className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
-                  <span>Auf Mobilgeräten/Android öffnet OK direkt die Dateiauswahl.</span>
+                  <span>In Firefox, Safari & auf Mobilgeräten öffnet OK direkt die Dateiauswahl zur Aktualisierung.</span>
                 </>
               )}
             </div>

@@ -12,7 +12,8 @@ import {
   Layers,
   CheckCircle2,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Download
 } from 'lucide-react';
 import { PlannerData } from '../types';
 
@@ -24,11 +25,14 @@ interface HeaderProps {
   showNotes: boolean;
   setShowNotes: (show: boolean) => void;
   isDirty: boolean;
+  isSaving?: boolean;
   syncConnected: boolean;
   hasSyncConfig?: boolean;
   folderName?: string;
+  activeFileName?: string;
   onOpenSync: () => void;
   onReloadSync?: () => void;
+  onSaveNow?: () => void;
   onOpenAutoDate: () => void;
   onOpenCopyCol: () => void;
   onOpenTabManager: () => void;
@@ -45,11 +49,14 @@ export const Header: React.FC<HeaderProps> = ({
   showNotes,
   setShowNotes,
   isDirty,
+  isSaving = false,
   syncConnected,
   hasSyncConfig = false,
   folderName = '',
+  activeFileName = '',
   onOpenSync,
   onReloadSync,
+  onSaveNow,
   onOpenAutoDate,
   onOpenCopyCol,
   onOpenTabManager,
@@ -171,56 +178,66 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             )}
 
-            {/* Sync Button (Works on iPad & Desktop!) */}
+            {/* Direct 1-Click Save button for Firefox, Linux & non-FSA environments when data changed */}
+            {!syncConnected && isDirty && onSaveNow && (
+              <button
+                type="button"
+                onClick={onSaveNow}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white transition-all shadow-xs"
+                title={`Änderungen sind im lokalen Browser gesichert. Klicke hier, um die Datei ${activeFileName || 'unterrichtsplanung_backup.json'} für FreeFileSync auf deiner Festplatte zu speichern.`}
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>JSON speichern</span>
+              </button>
+            )}
+
+            {/* Sync & Hub Button */}
             <button
               type="button"
               onClick={onOpenSync}
               className={`relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium transition-all shadow-xs ${
                 syncConnected
-                  ? isDirty
+                  ? isSaving
                     ? 'bg-amber-600 hover:bg-amber-700 text-white'
                     : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                   : hasSyncConfig
                   ? 'bg-slate-800 hover:bg-slate-900 text-white'
-                  : isDirty
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
                   : 'bg-slate-800 hover:bg-slate-900 text-white'
               }`}
               title={
                 syncConnected
-                  ? isDirty
-                    ? 'Schreibt Änderungen in die JSON-Datei auf der Festplatte...'
-                    : 'Verbunden: Alle Änderungen sind direkt in deiner JSON-Datei auf der Festplatte gespeichert.'
+                  ? isSaving
+                    ? 'Schreibt Änderungen direkt in die JSON-Datei auf der Festplatte...'
+                    : 'Live-Sync verbunden: Änderungen werden automatisch direkt in deiner JSON-Datei auf der Festplatte gespeichert.'
                   : hasSyncConfig
-                  ? 'Sync-Ordner konfiguriert, aber aktuell nicht direkt verbunden. Klicke hier oder auf „SYNC neu laden“.'
-                  : 'Synchronisation & Backup öffnen (iPad, Desktop & Cloud)'
+                  ? `Sync-Ordner eingerichtet (${folderName || 'Aktiv'}). Klicke für Details, Datei-Export oder FreeFileSync-Optionen.`
+                  : 'Synchronisation & Backup öffnen (FreeFileSync, iPad & PC)'
               }
             >
               {syncConnected ? (
-                isDirty ? (
+                isSaving ? (
                   <RefreshCw className="w-3.5 h-3.5 animate-spin text-amber-200" />
                 ) : (
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-200" />
                 )
+              ) : hasSyncConfig && !isDirty ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
               ) : (
-                <FolderSync className="w-3.5 h-3.5" />
+                <FolderSync className="w-3.5 h-3.5 text-indigo-300" />
               )}
               <span className="font-semibold">
                 {syncConnected
-                  ? isDirty
+                  ? isSaving
                     ? 'Speichert...'
                     : folderName
                     ? `Sync: ${folderName.length > 14 ? folderName.slice(0, 12) + '…' : folderName}`
                     : 'Sync aktiv'
                   : hasSyncConfig
                   ? folderName
-                    ? `Sync bereit: ${folderName.length > 10 ? folderName.slice(0, 8) + '…' : folderName}`
-                    : 'Sync bereit'
-                  : 'Sync'}
+                    ? `Sync: ${folderName.length > 10 ? folderName.slice(0, 8) + '…' : folderName}`
+                    : 'Sync-Hub'
+                  : 'Sync & Backup'}
               </span>
-              {isDirty && !syncConnected && (
-                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-              )}
             </button>
 
             {/* Print / PDF */}

@@ -44,6 +44,7 @@ export default function App() {
     return typeof window !== 'undefined' && window.innerWidth >= 768;
   });
   const [isDirty, setIsDirty] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
   const [syncDirHandle, setSyncDirHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [syncConnected, setSyncConnected] = useState<boolean>(false);
   const [activeSyncFileName, setActiveSyncFileName] = useState<string>(() => {
@@ -188,8 +189,16 @@ export default function App() {
 
   // Explicit flush function to guarantee writing to disk immediately
   const flushSaveToDisk = useCallback(async () => {
-    if (!syncDirHandleRef.current || !pendingSaveRef.current) return;
+    if (!syncDirHandleRef.current) {
+      setIsSaving(false);
+      return;
+    }
+    if (!pendingSaveRef.current) {
+      setIsSaving(false);
+      return;
+    }
     clearTimeout(syncTimerRef.current);
+    setIsSaving(true);
     try {
       const ok = await saveToFolderHandle(
         syncDirHandleRef.current,
@@ -199,9 +208,17 @@ export default function App() {
       if (ok) {
         pendingSaveRef.current = false;
         setIsDirty(false);
+      } else {
+        console.warn('saveToFolderHandle returned false or timed out');
+        setSyncConnected(false);
+        showToast('⚠️ Ordner-Schreibzugriff nicht gewährt. Bitte Verbindung prüfen.');
       }
     } catch (e) {
       console.warn('Flush save to folder failed', e);
+      setSyncConnected(false);
+      showToast('⚠️ Fehler beim Speichern in Sync-Ordner.');
+    } finally {
+      setIsSaving(false);
     }
   }, []);
 
@@ -254,6 +271,16 @@ export default function App() {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [flushSaveToDisk]);
+
+  // Safety timer: Never allow isSaving to remain stuck for more than 3.5 seconds
+  useEffect(() => {
+    if (isSaving) {
+      const timer = setTimeout(() => {
+        setIsSaving(false);
+      }, 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [isSaving]);
 
   // Tab Operations
   const handleSelectTab = (idx: number) => {
@@ -568,7 +595,7 @@ export default function App() {
     if (jsonFiles.length === 0) {
       // Empty folder or folder without json yet: establish binding and export current state
       const targetFile = SYNC_FILENAME;
-      setSyncConnected(true);
+      setSyncConnected(false);
       setSyncFolderName(detectedFolder);
       setActiveSyncFileName(targetFile);
       localStorage.setItem(SYNC_FOLDER_NAME_KEY, detectedFolder);
@@ -604,13 +631,13 @@ export default function App() {
       setData(loadedData);
       savePlannerData(loadedData);
       saveSnapshot(loadedData, `Ordner-Import: ${chosenFileName}`);
-      setSyncConnected(true);
+      setSyncConnected(false);
       setSyncFolderName(detectedFolder);
       setActiveSyncFileName(chosenFileName);
       localStorage.setItem(SYNC_FOLDER_NAME_KEY, detectedFolder);
       localStorage.setItem(SYNC_ACTIVE_FILENAME_KEY, chosenFileName);
       setIsDirty(false);
-      showToast(`📥 „${chosenFileName}“ aus Ordner „${detectedFolder}“ geladen & Ordner gemerkt!`);
+      showToast(`📥 „${chosenFileName}“ geladen! In Firefox: Nach Änderungen mit „JSON speichern“ sichern.`);
     } else {
       showToast(`⚠️ In „${detectedFolder}“ (${jsonFiles.length} JSON-Dateien) wurde keine gültige Unterrichtsplanungs-Datei gefunden.`);
     }
@@ -619,15 +646,24 @@ export default function App() {
   };
 
   const handleSaveToFolderNow = async () => {
-    let savedDirectly = false;
-    if (syncDirHandle) {
-      savedDirectly = await saveToFolderHandle(syncDirHandle, data, activeSyncFileName);
+    setIsSaving(true);
+    try {
+      let savedDirectly = false;
+      if (syncDirHandle) {
+        savedDirectly = await saveToFolderHandle(syncDirHandle, data, activeSyncFileName);
+      }
+      if (!savedDirectly) {
+        downloadJsonFile(data, activeSyncFileName);
+      }
+      setIsDirty(false);
+      pendingSaveRef.current = false;
+      showToast(`💾 Aktueller Stand in „${activeSyncFileName}“ gespeichert!`);
+    } catch (e) {
+      console.error('Save error', e);
+      showToast('⚠️ Fehler beim Speichern der Datei');
+    } finally {
+      setIsSaving(false);
     }
-    if (!savedDirectly) {
-      downloadJsonFile(data, activeSyncFileName);
-    }
-    setIsDirty(false);
-    showToast(`💾 Aktueller Stand in „${activeSyncFileName}“ gespeichert`);
   };
 
   const handleDisconnectFolder = async () => {
@@ -659,10 +695,10 @@ export default function App() {
           saveSnapshot(parsed, `Import: ${file.name}`);
           setIsDirty(false);
           setActiveTab(0);
-          setSyncConnected(true);
+          setSyncConnected(Boolean(syncDirHandle));
           setActiveSyncFileName(file.name);
           localStorage.setItem(SYNC_ACTIVE_FILENAME_KEY, file.name);
-          showToast(`📥 Backup aus „${file.name}“ erfolgreich geladen`);
+          showToast(`📥 Daten aus „${file.name}“ erfolgreich geladen`);
         } else {
           alert('Ungültiges Dateiformat. Bitte wähle eine gültige Unterrichtsplaner-JSON-Datei.');
         }
@@ -714,15 +750,18 @@ export default function App() {
         data={data}
         activeTab={activeTab}
         isDirty={isDirty}
+        isSaving={isSaving}
         syncConnected={syncConnected}
         hasSyncConfig={hasSyncConfig}
         folderName={syncFolderName}
+        activeFileName={activeSyncFileName}
         viewMode={viewMode}
         setViewMode={setViewMode}
         showNotes={showNotes}
         setShowNotes={setShowNotes}
         onOpenSync={() => setSyncModalOpen(true)}
         onReloadSync={handleConfirmSyncReload}
+        onSaveNow={handleSaveToFolderNow}
         onOpenTabManager={() => setTabManagerOpen(true)}
         onOpenAutoDate={() => setAutoDateOpen(true)}
         onOpenCopyCol={() => setCopyColOpen(true)}

@@ -26,6 +26,8 @@ import {
 import { PlannerData, Snapshot } from '../types';
 import { 
   isFsaSupported, 
+  isFsaApiAvailable,
+  isFirefox,
   isIosOrIpad,
   isAndroid,
   isMobileDevice,
@@ -331,7 +333,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                         Wählt einen lokalen Ordner (z.&nbsp;B. deinen <strong>FreeFileSync-Ordner</strong>). Die App lädt die aktuelle <code className="bg-purple-100 text-purple-900 px-1 py-0.5 rounded text-[11px] font-mono">*.json</code> automatisch, merkt sich den Ordner dauerhaft und speichert auch automatisch dort in dieser <code className="bg-purple-100 text-purple-900 px-1 py-0.5 rounded text-[11px] font-mono">*.json</code>. Klickt man erneut, kann ein anderer Ordner gewählt werden.
                       </p>
                       
-                      {syncConnected && (
+                      {syncConnected ? (
                         <div className="mt-2.5 pt-2 border-t border-emerald-200/80 flex flex-wrap items-center gap-2 text-xs text-emerald-900">
                           <span className="font-semibold flex items-center gap-1">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -348,6 +350,37 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                           <span className="text-[11px] text-emerald-700 ml-1">
                             (Automatisches Speichern aktiv)
                           </span>
+                        </div>
+                      ) : (folderName || activeFileName) ? (
+                        <div className="mt-2.5 pt-2 border-t border-purple-200/80 flex flex-wrap items-center gap-2 text-xs text-purple-900">
+                          <span className="font-semibold flex items-center gap-1">
+                            <FileText className="w-3.5 h-3.5 text-purple-600" />
+                            Aktive Datei:
+                          </span>
+                          <span className="bg-white/80 border border-purple-200 px-2 py-0.5 rounded font-mono font-medium text-indigo-700">
+                            {activeFileName}
+                          </span>
+                          {folderName && (
+                            <span className="text-[11px] text-slate-500">
+                              (in {folderName})
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {!isFsaApiAvailable() && (
+                        <div className="mt-3 p-3 rounded-lg bg-amber-50/90 border border-amber-200 text-xs text-amber-950 space-y-1.5">
+                          <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                            <span>🦊 Firefox / Linux Hinweis:</span>
+                          </div>
+                          <p className="text-amber-900/90 leading-relaxed">
+                            Firefox erlaubt Web-Apps aus Sicherheitsgründen keinen automatischen Hintergrund-Schreibzugriff auf Festplattenordner.
+                            Deine Änderungen werden <strong>immer sofort sicher im Browser gespeichert</strong>.
+                          </p>
+                          <p className="text-amber-800/90 leading-relaxed text-[11px]">
+                            • Klicke zum FreeFileSync-Abgleich einfach auf <strong>„In Datei speichern“</strong> (oder oben in der Leiste auf „JSON speichern“).<br />
+                            • <em>Tipp für vollautomatischen Sync:</em> In <strong>Chromium</strong> (oder Google Chrome, Brave, Edge) unter Linux steht die native Festplatten-Schnittstelle zur Verfügung, die jede Änderung ohne Klick direkt in deinen Ordner schreibt.
+                          </p>
                         </div>
                       )}
                     </div>
@@ -395,14 +428,27 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                           </button>
                         </>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={onConnectFolder}
-                          className="px-4 py-2.5 text-xs font-bold text-white bg-purple-700 hover:bg-purple-800 rounded-lg shadow-sm transition-all flex items-center gap-1.5 active:scale-95"
-                        >
-                          <FolderOpen className="w-4 h-4" />
-                          <span>FreeFileSync Datei laden</span>
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {onSaveNow && (folderName || activeFileName) && (
+                            <button
+                              type="button"
+                              onClick={onSaveNow}
+                              className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+                              title={`Aktuellen Stand jetzt sofort in ${activeFileName} speichern`}
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>In Datei speichern</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={onConnectFolder}
+                            className="px-4 py-2.5 text-xs font-bold text-white bg-purple-700 hover:bg-purple-800 rounded-lg shadow-sm transition-all flex items-center gap-1.5 active:scale-95"
+                          >
+                            <FolderOpen className="w-4 h-4" />
+                            <span>FreeFileSync Datei laden</span>
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

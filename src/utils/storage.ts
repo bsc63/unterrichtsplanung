@@ -34,6 +34,8 @@ export const isIosOrIpad = typeof navigator !== 'undefined' && (
 
 export const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 
+export const isFirefox = typeof navigator !== 'undefined' && /firefox|fxios/i.test(navigator.userAgent);
+
 export const isMobileDevice = isIosOrIpad || isAndroid;
 
 export function createDefaultPlannerData(): PlannerData {
@@ -314,11 +316,21 @@ export async function saveToFolderHandle(
     const targetName = fileName || localStorage.getItem(SYNC_ACTIVE_FILENAME_KEY) || SYNC_FILENAME;
     const perm = await (handle as any).queryPermission({ mode: 'readwrite' });
     if (perm !== 'granted') return false;
-    const fileHandle = await handle.getFileHandle(targetName, { create: true });
-    const writable = await (fileHandle as any).createWritable();
-    await writable.write(JSON.stringify(data, null, 2));
-    await writable.close();
-    return true;
+
+    // Timeout safety of 3500ms so disk operations never hang indefinitely
+    const timeoutPromise = new Promise<boolean>((_, reject) =>
+      setTimeout(() => reject(new Error('Speichern auf Festplatte überschritt Zeitlimit (3.5s Timeout)')), 3500)
+    );
+
+    const writePromise = (async () => {
+      const fileHandle = await handle.getFileHandle(targetName, { create: true });
+      const writable = await (fileHandle as any).createWritable();
+      await writable.write(JSON.stringify(data, null, 2));
+      await writable.close();
+      return true;
+    })();
+
+    return await Promise.race([writePromise, timeoutPromise]);
   } catch (e) {
     console.error('Error saving to folder handle', e);
     return false;
